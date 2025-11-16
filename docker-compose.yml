@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  midnight-node:
+    image: midnightnetwork/node:testnet
+    container_name: bunty-midnight-node
+    ports:
+      - "26657:26657"
+    environment:
+      - NETWORK=testnet
+    volumes:
+      - midnight-data:/data
+    networks:
+      - bunty-network
+    restart: unless-stopped
+
+  proof-server:
+    image: midnightnetwork/proof-server:latest
+    container_name: bunty-proof-server
+    ports:
+      - "6300:6300"
+    environment:
+      - CIRCUIT_PATH=/circuits
+      - LOG_LEVEL=info
+    volumes:
+      - ./midnight-contract/circuits:/circuits
+    networks:
+      - bunty-network
+    restart: unless-stopped
+
+  indexer:
+    image: midnightnetwork/indexer:latest
+    container_name: bunty-indexer
+    ports:
+      - "8081:8081"
+    environment:
+      - NODE_URL=http://midnight-node:26657
+      - POSTGRES_URL=postgresql://bunty_user:bunty_password@postgres:5432/bunty_indexer
+    depends_on:
+      - midnight-node
+      - postgres
+    networks:
+      - bunty-network
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: bunty-postgres
+    environment:
+      - POSTGRES_DB=bunty
+      - POSTGRES_USER=bunty_user
+      - POSTGRES_PASSWORD=bunty_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./backend/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - bunty-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bunty_user -d bunty"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: bunty-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - bunty-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  midnight-data:
+  postgres-data:
+  redis-data:
+
+networks:
+  bunty-network:
+    driver: bridge

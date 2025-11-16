@@ -1,0 +1,11 @@
+{
+  "name": "midnight-contract",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "echo 'Compact contracts will be compiled here'",
+    "lint": "echo 'Compact linting will be configured here'",
+    "type-check": "echo 'Compact type checking will be configured here'"
+  },
+  "devDependencies": {}
+}
