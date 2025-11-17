@@ -69,4 +69,37 @@ router.post(
   (req, res) => silaController.handleWebhook(req, res)
 );
 
+/**
+ * GET /api/sila/payment-history
+ * Get payment history for authenticated user
+ * Requires authentication
+ */
+router.get(
+  '/payment-history',
+  authenticateToken,
+  (req, res) => silaController.getPaymentHistory(req, res)
+);
+
+/**
+ * GET /api/sila/payment/:proofId
+ * Get payment details for a specific proof
+ * Requires authentication
+ */
+router.get(
+  '/payment/:proofId',
+  authenticateToken,
+  (req, res) => silaController.getPaymentByProof(req, res)
+);
+
+/**
+ * POST /api/sila/payment/:paymentId/retry
+ * Retry a failed payment
+ * Requires authentication
+ */
+router.post(
+  '/payment/:paymentId/retry',
+  authenticateToken,
+  (req, res) => silaController.retryPayment(req, res)
+);
+
 export default router;

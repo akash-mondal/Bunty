@@ -76,3 +76,26 @@ export interface GetBalanceResponse {
   balance: number;
   walletAddress: string;
 }
+
+export interface PaymentRecord {
+  id: string;
+  user_id: string;
+  proof_id: string;
+  amount: number;
+  transaction_id: string | null;
+  status: 'pending' | 'completed' | 'failed';
+  triggered_at: Date;
+  completed_at: Date | null;
+  error_message: string | null;
+}
+
+export interface PaymentHistoryResponse {
+  success: boolean;
+  payments: PaymentRecord[];
+}
+
+export interface AutomatedPaymentRequest {
+  userId: string;
+  proofId: string;
+  threshold: number;
+}

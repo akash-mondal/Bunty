@@ -1,5 +1,6 @@
 import Sila from 'sila-sdk';
 import pool from '../config/database';
+import metricsService from './metrics.service';
 import {
   RegisterUserRequest,
   RegisterUserResponse,
@@ -32,6 +33,7 @@ export class SilaService {
    * Register a new user with Sila
    */
   async registerUser(userId: string, userData: RegisterUserRequest): Promise<RegisterUserResponse> {
+    const startTime = Date.now();
     try {
       // Generate a unique user handle
       const userHandle = `user_${userId.replace(/-/g, '').substring(0, 20)}`;
@@ -86,6 +88,9 @@ export class SilaService {
         [userId, walletAddress, false]
       );
 
+      const duration = Date.now() - startTime;
+      await metricsService.trackExternalService('sila', true, duration);
+
       return {
         success: true,
         message: 'User registered successfully',
@@ -93,6 +98,8 @@ export class SilaService {
         walletAddress,
       };
     } catch (error) {
+      const duration = Date.now() - startTime;
+      await metricsService.trackExternalService('sila', false, duration);
       console.error('Error registering user with Sila:', error);
       throw new Error(error instanceof Error ? error.message : 'Failed to register user');
     }
@@ -102,6 +109,7 @@ export class SilaService {
    * Link a bank account for ACH transfers
    */
   async linkBankAccount(userId: string, bankData: LinkBankRequest): Promise<LinkBankResponse> {
+    const startTime = Date.now();
     try {
       // Get user's wallet
       const walletResult = await pool.query(
@@ -133,12 +141,17 @@ export class SilaService {
         [userId]
       );
 
+      const duration = Date.now() - startTime;
+      await metricsService.trackExternalService('sila', true, duration);
+
       return {
         success: true,
         message: 'Bank account linked successfully',
         accountName: bankData.accountName,
       };
     } catch (error) {
+      const duration = Date.now() - startTime;
+      await metricsService.trackExternalService('sila', false, duration);
       console.error('Error linking bank account:', error);
       throw new Error(error instanceof Error ? error.message : 'Failed to link bank account');
     }
@@ -199,6 +212,7 @@ export class SilaService {
    * Transfer funds via instant ACH
    */
   async transfer(userId: string, transferData: TransferRequest): Promise<TransferResponse> {
+    const startTime = Date.now();
     try {
       // Get user's wallet
       const walletResult = await pool.query(
@@ -226,6 +240,9 @@ export class SilaService {
         throw new Error(response.message || 'Failed to initiate transfer');
       }
 
+      const duration = Date.now() - startTime;
+      await metricsService.trackExternalService('sila', true, duration);
+
       return {
         success: true,
         message: 'Transfer initiated successfully',
@@ -233,6 +250,8 @@ export class SilaService {
         status: response.status || 'pending',
       };
     } catch (error) {
+      const duration = Date.now() - startTime;
+      await metricsService.trackExternalService('sila', false, duration);
       console.error('Error initiating transfer:', error);
       throw new Error(error instanceof Error ? error.message : 'Failed to initiate transfer');
     }

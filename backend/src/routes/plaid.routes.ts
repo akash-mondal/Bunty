@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import plaidController from '../controllers/plaid.controller';
 import { authenticateToken } from '../middleware/auth.middleware';
+import { validate, plaidSchemas } from '../middleware/validation.middleware';
 
 const router = Router();
 
@@ -11,7 +12,10 @@ router.use(authenticateToken);
 router.post('/create-link-token', plaidController.createLinkToken.bind(plaidController));
 
 // Exchange public token for access token
-router.post('/exchange', plaidController.exchangeToken.bind(plaidController));
+router.post('/exchange', validate(plaidSchemas.exchange), plaidController.exchangeToken.bind(plaidController));
+
+// Get connections
+router.get('/connections', plaidController.getConnections.bind(plaidController));
 
 // Get financial data
 router.get('/income', plaidController.getIncome.bind(plaidController));

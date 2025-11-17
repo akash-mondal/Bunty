@@ -1,0 +1,223 @@
+// income-proof.compact
+// Bunty Privacy-First Financial Identity Protocol
+// Smart contract for zero-knowledge proof verification on Midnight Network
+
+// Proof record structure stored in ledger
+export type ProofRecord = {
+  nullifier: Bytes<32>,
+  threshold: Field,
+  timestamp: Field,
+  expiresAt: Field,
+  userDID: Bytes<32>
+};
+
+// Ledger map for storing proof records indexed by nullifier
+export ledger proofRegistry: Map<Bytes<32>, ProofRecord>;
+
+// Private witness data structure (never revealed on-chain)
+witness private incomeData: {
+  income: Field,
+  employmentMonths: Field,
+  employerHash: Bytes<32>,
+  assets: Field,
+  liabilities: Field,
+  creditScore: Field,
+  ssnVerified: Bool,
+  selfieVerified: Bool,
+  documentVerified: Bool
+};
+
+// Helper function to get current timestamp
+function getCurrentTimestamp(): Field {
+  // In production, this would use Midnight's block timestamp
+  // For now, we use a placeholder that will be replaced by runtime
+  return field(0);
+}
+
+// Helper function to get current user DID
+function getCurrentUser(): Bytes<32> {
+  // In production, this would extract the user's DID from transaction context
+  // For now, we use a placeholder that will be replaced by runtime
+  return bytes<32>(0);
+}
+
+// Helper function to calculate 30-day expiry (in seconds)
+function calculateExpiry(currentTime: Field): Field {
+  const thirtyDaysInSeconds = field(30 * 24 * 60 * 60);
+  return currentTime + thirtyDaysInSeconds;
+}
+
+// Circuit 1: Verify Income
+// Validates that user meets income threshold and employment duration requirements
+export circuit verifyIncome(threshold: Field) {
+  // Requirement 7.2: Validate income meets threshold
+  assert(incomeData.income >= threshold, "Income does not meet threshold");
+  
+  // Requirement 7.2: Validate employment duration (minimum 6 months)
+  const minimumEmploymentMonths = field(6);
+  assert(incomeData.employmentMonths >= minimumEmploymentMonths, "Employment duration too short");
+  
+  // Requirement 7.2: Validate KYC completion
+  assert(incomeData.ssnVerified == true, "SSN verification required");
+  assert(incomeData.selfieVerified == true, "Selfie verification required");
+  assert(incomeData.documentVerified == true, "Document verification required");
+  
+  // Requirement 7.3: Generate nullifier to prevent replay attacks
+  let userDID = getCurrentUser();
+  let nullifier = sha256(incomeData.employerHash, userDID);
+  
+  // Requirement 7.5: Check nullifier not already used (replay prevention)
+  assert(!proofRegistry.contains(nullifier), "Proof already submitted (nullifier exists)");
+  
+  // Requirement 7.4: Calculate expiry (30-day TTL)
+  let currentTime = getCurrentTimestamp();
+  let expiryTime = calculateExpiry(currentTime);
+  
+  // Store proof record in ledger
+  proofRegistry[nullifier] = ProofRecord {
+    nullifier: nullifier,
+    threshold: threshold,
+    timestamp: currentTime,
+    expiresAt: expiryTime,
+    userDID: userDID
+  };
+  
+  // Return public outputs
+  return {
+    nullifier: nullifier,
+    threshold: threshold,
+    timestamp: currentTime,
+    expiresAt: expiryTime
+  };
+}
+
+// Circuit 2: Verify Assets
+// Validates that user meets minimum net worth requirements
+export circuit verifyAssets(minimumAssets: Field) {
+  // Requirement 7.2: Validate net worth (assets - liabilities)
+  let netWorth = incomeData.assets - incomeData.liabilities;
+  assert(netWorth >= minimumAssets, "Net worth does not meet minimum");
+  
+  // Ensure assets are positive
+  assert(incomeData.assets >= field(0), "Assets must be non-negative");
+  
+  // Requirement 7.2: Validate KYC completion
+  assert(incomeData.ssnVerified == true, "SSN verification required");
+  assert(incomeData.selfieVerified == true, "Selfie verification required");
+  assert(incomeData.documentVerified == true, "Document verification required");
+  
+  // Requirement 7.3: Generate nullifier using assets and liabilities
+  let userDID = getCurrentUser();
+  let nullifier = sha256(incomeData.assets, incomeData.liabilities, userDID);
+  
+  // Requirement 7.5: Check nullifier not already used
+  assert(!proofRegistry.contains(nullifier), "Proof already submitted (nullifier exists)");
+  
+  // Requirement 7.4: Calculate expiry (30-day TTL)
+  let currentTime = getCurrentTimestamp();
+  let expiryTime = calculateExpiry(currentTime);
+  
+  // Store proof record in ledger
+  proofRegistry[nullifier] = ProofRecord {
+    nullifier: nullifier,
+    threshold: minimumAssets,
+    timestamp: currentTime,
+    expiresAt: expiryTime,
+    userDID: userDID
+  };
+  
+  // Return public outputs
+  return {
+    nullifier: nullifier,
+    threshold: minimumAssets,
+    netWorth: netWorth,
+    timestamp: currentTime,
+    expiresAt: expiryTime
+  };
+}
+
+// Circuit 3: Verify Creditworthiness
+// Validates credit score and income stability
+export circuit verifyCreditworthiness(minimumScore: Field) {
+  // Requirement 7.2: Validate credit score
+  assert(incomeData.creditScore >= minimumScore, "Credit score does not meet minimum");
+  
+  // Requirement 7.2: Validate income stability
+  assert(incomeData.income > field(0), "Income must be positive");
+  
+  // Requirement 7.2: Validate employment stability (minimum 12 months for creditworthiness)
+  const minimumEmploymentMonths = field(12);
+  assert(incomeData.employmentMonths >= minimumEmploymentMonths, "Employment duration too short for creditworthiness");
+  
+  // Requirement 7.2: Validate KYC completion
+  assert(incomeData.ssnVerified == true, "SSN verification required");
+  assert(incomeData.selfieVerified == true, "Selfie verification required");
+  assert(incomeData.documentVerified == true, "Document verification required");
+  
+  // Requirement 7.3: Generate nullifier using credit score
+  let userDID = getCurrentUser();
+  let nullifier = sha256(incomeData.creditScore, userDID);
+  
+  // Requirement 7.5: Check nullifier not already used
+  assert(!proofRegistry.contains(nullifier), "Proof already submitted (nullifier exists)");
+  
+  // Requirement 7.4: Calculate expiry (30-day TTL)
+  let currentTime = getCurrentTimestamp();
+  let expiryTime = calculateExpiry(currentTime);
+  
+  // Store proof record in ledger
+  proofRegistry[nullifier] = ProofRecord {
+    nullifier: nullifier,
+    threshold: minimumScore,
+    timestamp: currentTime,
+    expiresAt: expiryTime,
+    userDID: userDID
+  };
+  
+  // Return public outputs
+  return {
+    nullifier: nullifier,
+    threshold: minimumScore,
+    creditScore: incomeData.creditScore,
+    timestamp: currentTime,
+    expiresAt: expiryTime
+  };
+}
+
+// Query function: Check if proof exists and is valid
+export query function isProofValid(nullifier: Bytes<32>): Bool {
+  if (!proofRegistry.contains(nullifier)) {
+    return false;
+  }
+  
+  let proof = proofRegistry[nullifier];
+  let currentTime = getCurrentTimestamp();
+  
+  // Check if proof has expired
+  if (currentTime > proof.expiresAt) {
+    return false;
+  }
+  
+  return true;
+}
+
+// Query function: Get proof record by nullifier
+export query function getProofRecord(nullifier: Bytes<32>): ProofRecord? {
+  if (!proofRegistry.contains(nullifier)) {
+    return null;
+  }
+  
+  return proofRegistry[nullifier];
+}
+
+// Query function: Check if proof is expired
+export query function isProofExpired(nullifier: Bytes<32>): Bool {
+  if (!proofRegistry.contains(nullifier)) {
+    return true;
+  }
+  
+  let proof = proofRegistry[nullifier];
+  let currentTime = getCurrentTimestamp();
+  
+  return currentTime > proof.expiresAt;
+}

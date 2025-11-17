@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import { AuthService } from '../services/auth.service';
 import { RegisterRequest, LoginRequest, RefreshTokenRequest } from '../types/auth.types';
+import { auditAuthEvent } from '../middleware/logging.middleware';
+import logger from '../utils/logger';
 
 const authService = new AuthService();
 
@@ -22,12 +24,16 @@ export class AuthController {
 
       const result = await authService.register(email, password);
 
+      auditAuthEvent(result.user.id, 'register', { email });
+      logger.info('User registered successfully', { userId: result.user.id, email });
+
       res.status(201).json({
         user: result.user,
         tokens: result.tokens
       });
     } catch (error) {
-      console.error('Registration error:', error);
+      const { email } = req.body;
+      logger.error('Registration error', { error, email });
       
       const errorMessage = error instanceof Error ? error.message : 'Registration failed';
       
@@ -58,12 +64,17 @@ export class AuthController {
 
       const result = await authService.login(email, password);
 
+      auditAuthEvent(result.user.id, 'login', { email });
+      logger.info('User logged in successfully', { userId: result.user.id, email });
+
       res.status(200).json({
         user: result.user,
         tokens: result.tokens
       });
     } catch (error) {
-      console.error('Login error:', error);
+      const { email } = req.body;
+      logger.error('Login error', { error, email });
+      auditAuthEvent(undefined, 'failed_login', { email });
       
       const errorMessage = error instanceof Error ? error.message : 'Login failed';
       
@@ -94,11 +105,13 @@ export class AuthController {
 
       const tokens = await authService.refreshToken(refreshToken);
 
+      logger.info('Token refreshed successfully');
+
       res.status(200).json({
         tokens
       });
     } catch (error) {
-      console.error('Token refresh error:', error);
+      logger.error('Token refresh error', { error });
       
       const errorMessage = error instanceof Error ? error.message : 'Token refresh failed';
       
@@ -141,11 +154,15 @@ export class AuthController {
 
       await authService.logout(userId, refreshToken);
 
+      auditAuthEvent(userId, 'logout');
+      logger.info('User logged out successfully', { userId });
+
       res.status(200).json({
         message: 'Logged out successfully'
       });
     } catch (error) {
-      console.error('Logout error:', error);
+      const userId = req.user?.userId;
+      logger.error('Logout error', { error, userId });
       
       res.status(500).json({
         error: {
@@ -189,7 +206,8 @@ export class AuthController {
         user
       });
     } catch (error) {
-      console.error('Get user error:', error);
+      const userId = req.user?.userId;
+      logger.error('Get user error', { error, userId });
       
       res.status(500).json({
         error: {

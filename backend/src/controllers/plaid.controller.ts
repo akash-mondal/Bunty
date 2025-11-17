@@ -1,5 +1,7 @@
 import { Request, Response } from 'express';
 import plaidService from '../services/plaid.service';
+import { auditExternalService } from '../middleware/logging.middleware';
+import logger from '../utils/logger';
 
 export class PlaidController {
   /**
@@ -23,11 +25,15 @@ export class PlaidController {
 
       const linkToken = await plaidService.createLinkToken(userId);
 
+      auditExternalService('plaid', 'create_link_token', userId, true);
+      logger.info('Plaid link token created', { userId });
+
       res.json({
         linkToken,
       });
     } catch (error: any) {
-      console.error('Error in createLinkToken:', error);
+      auditExternalService('plaid', 'create_link_token', req.user?.userId || 'unknown', false, { error: error.message });
+      logger.error('Error in createLinkToken', { error, userId: req.user?.userId });
       res.status(500).json({
         error: {
           code: 'PLAID_001',
@@ -71,16 +77,56 @@ export class PlaidController {
 
       await plaidService.exchangePublicToken(userId, publicToken);
 
+      auditExternalService('plaid', 'exchange_token', userId, true);
+      logger.info('Plaid token exchanged successfully', { userId });
+
       res.json({
         success: true,
         message: 'Bank account linked successfully',
       });
     } catch (error: any) {
-      console.error('Error in exchangeToken:', error);
+      auditExternalService('plaid', 'exchange_token', req.user?.userId || 'unknown', false, { error: error.message });
+      logger.error('Error in exchangeToken', { error, userId: req.user?.userId });
       res.status(500).json({
         error: {
           code: 'PLAID_001',
           message: error.message || 'Failed to exchange token',
+          timestamp: Date.now(),
+        },
+      });
+    }
+  }
+
+  /**
+   * GET /api/plaid/connections
+   * Get all Plaid connections for authenticated user
+   */
+  async getConnections(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.userId;
+
+      if (!userId) {
+        res.status(401).json({
+          error: {
+            code: 'AUTH_001',
+            message: 'User not authenticated',
+            timestamp: Date.now(),
+          },
+        });
+        return;
+      }
+
+      const connections = await plaidService.getConnections(userId);
+
+      logger.info('Plaid connections fetched', { userId, count: connections.length });
+
+      res.json(connections);
+    } catch (error: any) {
+      logger.error('Error in getConnections', { error, userId: req.user?.userId });
+      res.status(500).json({
+        error: {
+          code: 'PLAID_001',
+          message: error.message || 'Failed to fetch connections',
           timestamp: Date.now(),
         },
       });
@@ -108,9 +154,13 @@ export class PlaidController {
 
       const incomeData = await plaidService.getIncome(userId);
 
+      auditExternalService('plaid', 'get_income', userId, true);
+      logger.info('Plaid income data fetched', { userId });
+
       res.json(incomeData);
     } catch (error: any) {
-      console.error('Error in getIncome:', error);
+      auditExternalService('plaid', 'get_income', req.user?.userId || 'unknown', false, { error: error.message });
+      logger.error('Error in getIncome', { error, userId: req.user?.userId });
       res.status(500).json({
         error: {
           code: 'PLAID_001',
@@ -142,9 +192,13 @@ export class PlaidController {
 
       const assetsData = await plaidService.getAssets(userId);
 
+      auditExternalService('plaid', 'get_assets', userId, true);
+      logger.info('Plaid assets data fetched', { userId });
+
       res.json(assetsData);
     } catch (error: any) {
-      console.error('Error in getAssets:', error);
+      auditExternalService('plaid', 'get_assets', req.user?.userId || 'unknown', false, { error: error.message });
+      logger.error('Error in getAssets', { error, userId: req.user?.userId });
       res.status(500).json({
         error: {
           code: 'PLAID_001',
@@ -176,9 +230,13 @@ export class PlaidController {
 
       const liabilitiesData = await plaidService.getLiabilities(userId);
 
+      auditExternalService('plaid', 'get_liabilities', userId, true);
+      logger.info('Plaid liabilities data fetched', { userId });
+
       res.json(liabilitiesData);
     } catch (error: any) {
-      console.error('Error in getLiabilities:', error);
+      auditExternalService('plaid', 'get_liabilities', req.user?.userId || 'unknown', false, { error: error.message });
+      logger.error('Error in getLiabilities', { error, userId: req.user?.userId });
       res.status(500).json({
         error: {
           code: 'PLAID_001',
@@ -210,9 +268,13 @@ export class PlaidController {
 
       const signalData = await plaidService.getSignal(userId);
 
+      auditExternalService('plaid', 'get_signal', userId, true);
+      logger.info('Plaid signal data fetched', { userId });
+
       res.json(signalData);
     } catch (error: any) {
-      console.error('Error in getSignal:', error);
+      auditExternalService('plaid', 'get_signal', req.user?.userId || 'unknown', false, { error: error.message });
+      logger.error('Error in getSignal', { error, userId: req.user?.userId });
       res.status(500).json({
         error: {
             code: 'PLAID_001',
@@ -244,9 +306,13 @@ export class PlaidController {
 
       const investmentsData = await plaidService.getInvestments(userId);
 
+      auditExternalService('plaid', 'get_investments', userId, true);
+      logger.info('Plaid investments data fetched', { userId });
+
       res.json(investmentsData);
     } catch (error: any) {
-      console.error('Error in getInvestments:', error);
+      auditExternalService('plaid', 'get_investments', req.user?.userId || 'unknown', false, { error: error.message });
+      logger.error('Error in getInvestments', { error, userId: req.user?.userId });
       res.status(500).json({
         error: {
           code: 'PLAID_001',
@@ -284,9 +350,13 @@ export class PlaidController {
         endDate as string | undefined
       );
 
+      auditExternalService('plaid', 'get_transactions', userId, true);
+      logger.info('Plaid transactions data fetched', { userId, startDate, endDate });
+
       res.json(transactionsData);
     } catch (error: any) {
-      console.error('Error in getTransactions:', error);
+      auditExternalService('plaid', 'get_transactions', req.user?.userId || 'unknown', false, { error: error.message });
+      logger.error('Error in getTransactions', { error, userId: req.user?.userId });
       res.status(500).json({
         error: {
           code: 'PLAID_001',

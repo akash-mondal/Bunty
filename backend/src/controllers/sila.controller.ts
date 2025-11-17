@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { silaService } from '../services/sila.service';
+import paymentAutomationService from '../services/paymentAutomation.service';
 import {
   RegisterUserRequest,
   LinkBankRequest,
@@ -7,6 +8,8 @@ import {
   TransferRequest,
   SilaWebhookEvent,
 } from '../types/sila.types';
+import { auditExternalService, auditSensitiveOperation } from '../middleware/logging.middleware';
+import logger from '../utils/logger';
 
 export class SilaController {
   /**
@@ -55,9 +58,14 @@ export class SilaController {
 
       const result = await silaService.registerUser(userId, userData);
 
+      auditExternalService('sila', 'register_user', userId, true);
+      auditSensitiveOperation('sila_user_registration', userId, true, { email: userData.email });
+      logger.info('Sila user registered', { userId, email: userData.email });
+
       res.status(200).json(result);
     } catch (error) {
-      console.error('Error in registerUser:', error);
+      auditExternalService('sila', 'register_user', req.user?.userId || 'unknown', false, { error: error instanceof Error ? error.message : 'Unknown error' });
+      logger.error('Error in registerUser', { error, userId: req.user?.userId });
       res.status(500).json({
         error: {
           code: 'SILA_002',
@@ -108,9 +116,14 @@ export class SilaController {
 
       const result = await silaService.linkBankAccount(userId, bankData);
 
+      auditExternalService('sila', 'link_bank_account', userId, true);
+      auditSensitiveOperation('sila_bank_link', userId, true, { accountName: bankData.accountName, accountType: bankData.accountType });
+      logger.info('Sila bank account linked', { userId, accountName: bankData.accountName });
+
       res.status(200).json(result);
     } catch (error) {
-      console.error('Error in linkBankAccount:', error);
+      auditExternalService('sila', 'link_bank_account', req.user?.userId || 'unknown', false, { error: error instanceof Error ? error.message : 'Unknown error' });
+      logger.error('Error in linkBankAccount', { error, userId: req.user?.userId });
       res.status(500).json({
         error: {
           code: 'SILA_004',
@@ -144,9 +157,13 @@ export class SilaController {
 
       const result = await silaService.issueWallet(userId, amount || 0);
 
+      auditExternalService('sila', 'issue_wallet', userId, true, { amount: amount || 0 });
+      logger.info('Sila wallet issued', { userId, amount: amount || 0 });
+
       res.status(200).json(result);
     } catch (error) {
-      console.error('Error in issueWallet:', error);
+      auditExternalService('sila', 'issue_wallet', req.user?.userId || 'unknown', false, { error: error instanceof Error ? error.message : 'Unknown error' });
+      logger.error('Error in issueWallet', { error, userId: req.user?.userId });
       res.status(500).json({
         error: {
           code: 'SILA_005',
@@ -203,9 +220,14 @@ export class SilaController {
 
       const result = await silaService.transfer(userId, transferData);
 
+      auditExternalService('sila', 'transfer', userId, true, { amount: transferData.amount, destination: transferData.destination });
+      auditSensitiveOperation('sila_transfer', userId, true, { amount: transferData.amount });
+      logger.info('Sila transfer initiated', { userId, amount: transferData.amount, destination: transferData.destination });
+
       res.status(200).json(result);
     } catch (error) {
-      console.error('Error in transfer:', error);
+      auditExternalService('sila', 'transfer', req.user?.userId || 'unknown', false, { error: error instanceof Error ? error.message : 'Unknown error' });
+      logger.error('Error in transfer', { error, userId: req.user?.userId });
       res.status(500).json({
         error: {
           code: 'SILA_008',
@@ -237,9 +259,11 @@ export class SilaController {
 
       const result = await silaService.getBalance(userId);
 
+      logger.info('Sila balance fetched', { userId });
+
       res.status(200).json(result);
     } catch (error) {
-      console.error('Error in getBalance:', error);
+      logger.error('Error in getBalance', { error, userId: req.user?.userId });
       res.status(500).json({
         error: {
           code: 'SILA_009',
@@ -270,16 +294,165 @@ export class SilaController {
         return;
       }
 
+      logger.info('Sila webhook received', { eventType: event.eventType, transactionId: event.transactionId });
+
       // Process webhook event
       await silaService.handleWebhookEvent(event);
 
+      auditExternalService('sila', 'webhook_received', 'system', true, { eventType: event.eventType, transactionId: event.transactionId });
+      logger.info('Sila webhook processed successfully', { eventType: event.eventType, transactionId: event.transactionId });
+
       res.status(200).json({ received: true });
     } catch (error) {
-      console.error('Error in handleWebhook:', error);
+      auditExternalService('sila', 'webhook_received', 'system', false, { error: error instanceof Error ? error.message : 'Unknown error' });
+      logger.error('Error in handleWebhook', { error });
       res.status(400).json({
         error: {
           code: 'SILA_011',
           message: error instanceof Error ? error.message : 'Webhook processing failed',
+          timestamp: Date.now(),
+        },
+      });
+    }
+  }
+
+  /**
+   * GET /api/sila/payment-history
+   * Get payment history for authenticated user
+   */
+  async getPaymentHistory(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.userId;
+
+      if (!userId) {
+        res.status(401).json({
+          error: {
+            code: 'AUTH_001',
+            message: 'User not authenticated',
+            timestamp: Date.now(),
+          },
+        });
+        return;
+      }
+
+      const payments = await paymentAutomationService.getPaymentHistory(userId);
+
+      logger.info('Payment history fetched', { userId, count: payments.length });
+
+      res.status(200).json({
+        success: true,
+        payments,
+      });
+    } catch (error) {
+      logger.error('Error in getPaymentHistory', { error, userId: req.user?.userId });
+      res.status(500).json({
+        error: {
+          code: 'SILA_012',
+          message: error instanceof Error ? error.message : 'Failed to fetch payment history',
+          timestamp: Date.now(),
+        },
+      });
+    }
+  }
+
+  /**
+   * GET /api/sila/payment/:proofId
+   * Get payment details for a specific proof
+   */
+  async getPaymentByProof(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.userId;
+      const { proofId } = req.params;
+
+      if (!userId) {
+        res.status(401).json({
+          error: {
+            code: 'AUTH_001',
+            message: 'User not authenticated',
+            timestamp: Date.now(),
+          },
+        });
+        return;
+      }
+
+      const payment = await paymentAutomationService.getPaymentByProofId(proofId);
+
+      if (!payment) {
+        res.status(404).json({
+          error: {
+            code: 'SILA_013',
+            message: 'Payment not found',
+            timestamp: Date.now(),
+          },
+        });
+        return;
+      }
+
+      // Verify payment belongs to user
+      if (payment.user_id !== userId) {
+        res.status(403).json({
+          error: {
+            code: 'SILA_014',
+            message: 'Access denied',
+            timestamp: Date.now(),
+          },
+        });
+        return;
+      }
+
+      logger.info('Payment details fetched', { userId, proofId });
+
+      res.status(200).json({
+        success: true,
+        payment,
+      });
+    } catch (error) {
+      logger.error('Error in getPaymentByProof', { error, userId: req.user?.userId, proofId: req.params.proofId });
+      res.status(500).json({
+        error: {
+          code: 'SILA_015',
+          message: error instanceof Error ? error.message : 'Failed to fetch payment details',
+          timestamp: Date.now(),
+        },
+      });
+    }
+  }
+
+  /**
+   * POST /api/sila/payment/:paymentId/retry
+   * Retry a failed payment
+   */
+  async retryPayment(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.userId;
+      const { paymentId } = req.params;
+
+      if (!userId) {
+        res.status(401).json({
+          error: {
+            code: 'AUTH_001',
+            message: 'User not authenticated',
+            timestamp: Date.now(),
+          },
+        });
+        return;
+      }
+
+      const payment = await paymentAutomationService.retryPayment(paymentId);
+
+      auditSensitiveOperation('payment_retry', userId, true, { paymentId });
+      logger.info('Payment retry initiated', { userId, paymentId });
+
+      res.status(200).json({
+        success: true,
+        payment,
+      });
+    } catch (error) {
+      logger.error('Error in retryPayment', { error, userId: req.user?.userId, paymentId: req.params.paymentId });
+      res.status(500).json({
+        error: {
+          code: 'SILA_016',
+          message: error instanceof Error ? error.message : 'Failed to retry payment',
           timestamp: Date.now(),
         },
       });

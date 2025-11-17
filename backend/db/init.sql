@@ -63,6 +63,19 @@ CREATE TABLE IF NOT EXISTS sila_wallets (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Payment history
+CREATE TABLE IF NOT EXISTS payment_history (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  proof_id VARCHAR(255) REFERENCES proof_submissions(proof_id) ON DELETE CASCADE,
+  amount DECIMAL(10, 2) NOT NULL,
+  transaction_id VARCHAR(255),
+  status VARCHAR(50) DEFAULT 'pending',
+  triggered_at TIMESTAMP DEFAULT NOW(),
+  completed_at TIMESTAMP,
+  error_message TEXT
+);
+
 -- Create indexer database for Midnight indexer
 CREATE DATABASE bunty_indexer;
 
@@ -74,3 +87,5 @@ CREATE INDEX IF NOT EXISTS idx_witness_commitments_user_id ON witness_commitment
 CREATE INDEX IF NOT EXISTS idx_proof_submissions_user_id ON proof_submissions(user_id);
 CREATE INDEX IF NOT EXISTS idx_proof_submissions_nullifier ON proof_submissions(nullifier);
 CREATE INDEX IF NOT EXISTS idx_sila_wallets_user_id ON sila_wallets(user_id);
+CREATE INDEX IF NOT EXISTS idx_payment_history_user_id ON payment_history(user_id);
+CREATE INDEX IF NOT EXISTS idx_payment_history_proof_id ON payment_history(proof_id);

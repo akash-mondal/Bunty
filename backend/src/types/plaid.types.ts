@@ -7,6 +7,23 @@ export interface PlaidConnection {
   created_at: Date;
 }
 
+export interface PlaidConnectionResponse {
+  id: string;
+  userId: string;
+  itemId: string;
+  institutionName: string;
+  accounts: Array<{
+    id: string;
+    name: string;
+    mask: string;
+    type: string;
+    subtype: string;
+    institutionName?: string;
+  }>;
+  createdAt: Date;
+  status: 'connected' | 'disconnected' | 'error';
+}
+
 export interface IncomeData {
   monthlyIncome: number;
   employmentMonths: number;

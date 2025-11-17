@@ -1,6 +1,7 @@
 import Stripe from 'stripe';
 import pool from '../config/database';
 import { StripeVerification, VerificationStatus } from '../types/stripe.types';
+import metricsService from './metrics.service';
 
 if (!process.env.STRIPE_SECRET_KEY) {
   throw new Error('STRIPE_SECRET_KEY is not configured');
@@ -15,6 +16,7 @@ export class StripeService {
    * Create a Stripe Identity verification session
    */
   async createIdentitySession(userId: string, returnUrl?: string): Promise<{ sessionId: string; clientSecret: string }> {
+    const startTime = Date.now();
     try {
       // Create verification session with Stripe
       const verificationSession = await stripe.identity.verificationSessions.create({
@@ -40,11 +42,16 @@ export class StripeService {
         [userId, verificationSession.id]
       );
 
+      const duration = Date.now() - startTime;
+      await metricsService.trackExternalService('stripe', true, duration);
+
       return {
         sessionId: verificationSession.id,
         clientSecret: verificationSession.client_secret || '',
       };
     } catch (error) {
+      const duration = Date.now() - startTime;
+      await metricsService.trackExternalService('stripe', false, duration);
       console.error('Error creating Stripe Identity session:', error);
       throw new Error('Failed to create identity verification session');
     }
@@ -54,6 +61,7 @@ export class StripeService {
    * Get verification status for a user
    */
   async getVerificationStatus(userId: string): Promise<VerificationStatus | null> {
+    const startTime = Date.now();
     try {
       const result = await pool.query<StripeVerification>(
         `SELECT * FROM stripe_verifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
@@ -66,6 +74,9 @@ export class StripeService {
 
       const verification = result.rows[0];
 
+      const duration = Date.now() - startTime;
+      await metricsService.trackExternalService('stripe', true, duration);
+
       return {
         ssnVerified: verification.ssn_verified,
         selfieVerified: verification.selfie_verified,
@@ -73,6 +84,8 @@ export class StripeService {
         completedAt: verification.completed_at || undefined,
       };
     } catch (error) {
+      const duration = Date.now() - startTime;
+      await metricsService.trackExternalService('stripe', false, duration);
       console.error('Error fetching verification status:', error);
       throw new Error('Failed to fetch verification status');
     }
@@ -154,9 +167,15 @@ export class StripeService {
    * Get verification session details from Stripe
    */
   async getVerificationSession(sessionId: string): Promise<Stripe.Identity.VerificationSession> {
+    const startTime = Date.now();
     try {
-      return await stripe.identity.verificationSessions.retrieve(sessionId);
+      const session = await stripe.identity.verificationSessions.retrieve(sessionId);
+      const duration = Date.now() - startTime;
+      await metricsService.trackExternalService('stripe', true, duration);
+      return session;
     } catch (error) {
+      const duration = Date.now() - startTime;
+      await metricsService.trackExternalService('stripe', false, duration);
       console.error('Error retrieving verification session:', error);
       throw new Error('Failed to retrieve verification session');
     }

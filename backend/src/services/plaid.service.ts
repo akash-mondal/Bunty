@@ -2,6 +2,7 @@ import { Configuration, PlaidApi, PlaidEnvironments, Products, CountryCode } fro
 import pool from '../config/database';
 import { encrypt, decrypt } from '../utils/encryption';
 import crypto from 'crypto';
+import metricsService from './metrics.service';
 import type {
   IncomeData,
   AssetsData,
@@ -9,7 +10,8 @@ import type {
   SignalData,
   InvestmentsData,
   TransactionsData,
-  PlaidConnection
+  PlaidConnection,
+  PlaidConnectionResponse
 } from '../types/plaid.types';
 
 class PlaidService {
@@ -33,6 +35,7 @@ class PlaidService {
    * Create a link token for Plaid Link initialization
    */
   async createLinkToken(userId: string): Promise<string> {
+    const startTime = Date.now();
     try {
       const response = await this.client.linkTokenCreate({
         user: {
@@ -52,8 +55,13 @@ class PlaidService {
         language: 'en',
       });
 
+      const duration = Date.now() - startTime;
+      await metricsService.trackExternalService('plaid', true, duration);
+
       return response.data.link_token;
     } catch (error: any) {
+      const duration = Date.now() - startTime;
+      await metricsService.trackExternalService('plaid', false, duration);
       console.error('Error creating link token:', error.response?.data || error.message);
       throw new Error('Failed to create Plaid link token');
     }
@@ -101,6 +109,74 @@ class PlaidService {
     } catch (error: any) {
       console.error('Error exchanging public token:', error.response?.data || error.message);
       throw new Error('Failed to exchange Plaid public token');
+    }
+  }
+
+  /**
+   * Get all Plaid connections for a user with account details
+   */
+  async getConnections(userId: string): Promise<PlaidConnectionResponse[]> {
+    try {
+      const result = await pool.query(
+        `SELECT id, user_id, item_id, institution_name, created_at, access_token_encrypted
+         FROM plaid_connections 
+         WHERE user_id = $1`,
+        [userId]
+      );
+
+      if (result.rows.length === 0) {
+        return [];
+      }
+
+      // Fetch account details for each connection
+      const connections = await Promise.all(
+        result.rows.map(async (row) => {
+          try {
+            const accessToken = decrypt(row.access_token_encrypted);
+            
+            // Get accounts for this connection
+            const accountsResponse = await this.client.accountsGet({
+              access_token: accessToken,
+            });
+
+            const accounts = accountsResponse.data.accounts.map((account) => ({
+              id: account.account_id,
+              name: account.name,
+              mask: account.mask || '',
+              type: account.type,
+              subtype: account.subtype || '',
+              institutionName: row.institution_name,
+            }));
+
+            return {
+              id: row.id,
+              userId: row.user_id,
+              itemId: row.item_id,
+              institutionName: row.institution_name || 'Unknown Institution',
+              accounts,
+              createdAt: row.created_at,
+              status: 'connected' as const,
+            };
+          } catch (error) {
+            console.error('Error fetching accounts for connection:', error);
+            // Return connection with error status if account fetch fails
+            return {
+              id: row.id,
+              userId: row.user_id,
+              itemId: row.item_id,
+              institutionName: row.institution_name || 'Unknown Institution',
+              accounts: [],
+              createdAt: row.created_at,
+              status: 'error' as const,
+            };
+          }
+        })
+      );
+
+      return connections;
+    } catch (error: any) {
+      console.error('Error fetching connections:', error);
+      throw new Error('Failed to fetch Plaid connections');
     }
   }
 

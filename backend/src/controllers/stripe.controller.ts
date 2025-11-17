@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import { stripeService } from '../services/stripe.service';
 import { CreateIdentitySessionRequest } from '../types/stripe.types';
+import { auditExternalService } from '../middleware/logging.middleware';
+import logger from '../utils/logger';
 
 export class StripeController {
   /**
@@ -26,12 +28,16 @@ export class StripeController {
 
       const session = await stripeService.createIdentitySession(userId, returnUrl);
 
+      auditExternalService('stripe', 'create_identity_session', userId, true, { sessionId: session.sessionId });
+      logger.info('Stripe identity session created', { userId, sessionId: session.sessionId });
+
       res.status(200).json({
         sessionId: session.sessionId,
         clientSecret: session.clientSecret
       });
     } catch (error) {
-      console.error('Error in createIdentitySession:', error);
+      auditExternalService('stripe', 'create_identity_session', req.user?.userId || 'unknown', false, { error: error instanceof Error ? error.message : 'Unknown error' });
+      logger.error('Error in createIdentitySession', { error, userId: req.user?.userId });
       res.status(500).json({
         error: {
           code: 'STRIPE_001',
@@ -64,6 +70,7 @@ export class StripeController {
       const status = await stripeService.getVerificationStatus(userId);
 
       if (!status) {
+        logger.warn('No verification found for user', { userId });
         res.status(404).json({
           error: {
             code: 'STRIPE_002',
@@ -74,9 +81,13 @@ export class StripeController {
         return;
       }
 
+      auditExternalService('stripe', 'get_verification_status', userId, true);
+      logger.info('Stripe verification status fetched', { userId, verified: status.ssnVerified && status.selfieVerified && status.documentVerified });
+
       res.status(200).json(status);
     } catch (error) {
-      console.error('Error in getVerificationStatus:', error);
+      auditExternalService('stripe', 'get_verification_status', req.user?.userId || 'unknown', false, { error: error instanceof Error ? error.message : 'Unknown error' });
+      logger.error('Error in getVerificationStatus', { error, userId: req.user?.userId });
       res.status(500).json({
         error: {
           code: 'STRIPE_001',
@@ -109,12 +120,18 @@ export class StripeController {
       // Verify webhook signature and construct event
       const event = stripeService.verifyWebhookSignature(req.body, signature);
 
+      logger.info('Stripe webhook received', { eventType: event.type, eventId: event.id });
+
       // Handle the event
       await stripeService.handleWebhookEvent(event);
 
+      auditExternalService('stripe', 'webhook_received', 'system', true, { eventType: event.type, eventId: event.id });
+      logger.info('Stripe webhook processed successfully', { eventType: event.type, eventId: event.id });
+
       res.status(200).json({ received: true });
     } catch (error) {
-      console.error('Error in handleWebhook:', error);
+      auditExternalService('stripe', 'webhook_received', 'system', false, { error: error instanceof Error ? error.message : 'Unknown error' });
+      logger.error('Error in handleWebhook', { error });
       res.status(400).json({
         error: {
           code: 'STRIPE_004',

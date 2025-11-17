@@ -1,0 +1,31 @@
+{
+  "name": "@bunty/verifier-client",
+  "version": "1.0.0",
+  "description": "Standalone client library for verifying Bunty ZK proofs via Midnight Network indexer",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "lint": "echo 'No linting configured for verifier-client'",
+    "type-check": "tsc --noEmit"
+  },
+  "keywords": [
+    "bunty",
+    "zero-knowledge",
+    "proof",
+    "verifier",
+    "midnight",
+    "cardano"
+  ],
+  "author": "Bunty Team",
+  "license": "MIT",
+  "dependencies": {
+    "graphql": "^16.8.1",
+    "graphql-request": "^6.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.3"
+  }
+}

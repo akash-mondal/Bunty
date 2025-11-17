@@ -1,4 +1,7 @@
 import type { Metadata } from 'next'
+import { AuthProvider } from '@/contexts/AuthContext'
+import { WalletProvider } from '@/contexts/WalletContext'
+import './globals.css'
 
 export const metadata: Metadata = {
   title: 'Bunty - Privacy-First Financial Identity',
@@ -12,7 +15,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <AuthProvider>
+          <WalletProvider>{children}</WalletProvider>
+        </AuthProvider>
+      </body>
     </html>
   )
 }
