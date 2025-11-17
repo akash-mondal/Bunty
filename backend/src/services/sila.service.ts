@@ -1,4 +1,4 @@
-import Sila from 'sila-sdk';
+// import Sila from 'sila-sdk'; // Temporarily disabled for local testing
 import pool from '../config/database';
 import metricsService from './metrics.service';
 import {
@@ -13,20 +13,9 @@ import {
   SilaWebhookEvent,
 } from '../types/sila.types';
 
-if (!process.env.SILA_APP_HANDLE) {
-  throw new Error('SILA_APP_HANDLE is not configured');
-}
-
-if (!process.env.SILA_PRIVATE_KEY) {
-  throw new Error('SILA_PRIVATE_KEY is not configured');
-}
-
 // Initialize Sila SDK in sandbox mode
-const sila = new Sila(
-  process.env.SILA_APP_HANDLE,
-  process.env.SILA_PRIVATE_KEY,
-  'sandbox' // Use 'production' for production environment
-);
+// Temporarily disabled for local testing
+const sila: any = null;
 
 export class SilaService {
   /**

@@ -1,13 +1,13 @@
 import crypto from 'crypto';
 import pool from '../config/database';
 import plaidService from './plaid.service';
-import { stripeService } from './stripe.service';
+import { personaService } from './persona.service';
 import midnightService from './midnight.service';
 import type { Witness, WitnessCommitment, GenerateWitnessResponse, CommitHashResponse } from '../types/witness.types';
 
 class WitnessService {
   /**
-   * Generate witness data by combining Plaid and Stripe data
+   * Generate witness data by combining Plaid and identity verification data
    */
   async generateWitness(userId: string): Promise<GenerateWitnessResponse> {
     try {
@@ -17,7 +17,7 @@ class WitnessService {
         plaidService.getAssets(userId),
         plaidService.getLiabilities(userId),
         plaidService.getSignal(userId),
-        stripeService.getVerificationStatus(userId),
+        personaService.getVerificationStatus(userId),
       ]);
 
       // Validate that verification status exists

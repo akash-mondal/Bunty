@@ -19,7 +19,10 @@ CREATE TABLE IF NOT EXISTS plaid_connections (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
--- Stripe verifications
+-- DEPRECATED: Stripe verifications table
+-- This table has been replaced with persona_verifications
+-- Kept for backward compatibility with existing databases
+-- Will be archived to stripe_verifications_archived during migration
 CREATE TABLE IF NOT EXISTS stripe_verifications (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES users(id) ON DELETE CASCADE,

@@ -22,6 +22,7 @@ interface ExternalServiceMetrics {
   stripe: { uptime: number; avgResponseTime: number };
   sila: { uptime: number; avgResponseTime: number };
   midnight: { uptime: number; avgResponseTime: number };
+  persona: { uptime: number; avgResponseTime: number };
 }
 
 class MetricsService {
@@ -140,7 +141,7 @@ class MetricsService {
    * Track external service call
    */
   async trackExternalService(
-    service: 'plaid' | 'stripe' | 'sila' | 'midnight',
+    service: 'plaid' | 'stripe' | 'sila' | 'midnight' | 'persona',
     success: boolean,
     duration: number
   ): Promise<void> {
@@ -163,6 +164,131 @@ class MetricsService {
       logger.debug('External service call tracked', { service, success, duration });
     } catch (error) {
       logger.error('Failed to track external service', { error, service });
+    }
+  }
+
+  /**
+   * Track Persona verification attempt
+   */
+  async trackPersonaVerification(
+    userId: string,
+    inquiryId: string,
+    status: 'created' | 'completed' | 'failed' | 'expired'
+  ): Promise<void> {
+    try {
+      const key = `${this.METRICS_PREFIX}persona:verification:${status}`;
+      await redisClient.incr(key);
+      await redisClient.expire(key, 60 * 60 * 24 * this.RETENTION_DAYS);
+
+      logger.info('Persona verification tracked', { userId, inquiryId, status });
+    } catch (error) {
+      logger.error('Failed to track Persona verification', { error, userId, inquiryId });
+    }
+  }
+
+  /**
+   * Track Persona webhook delivery
+   */
+  async trackPersonaWebhook(
+    eventType: string,
+    success: boolean,
+    processingTime: number
+  ): Promise<void> {
+    try {
+      const statusKey = success
+        ? `${this.METRICS_PREFIX}persona:webhook:success`
+        : `${this.METRICS_PREFIX}persona:webhook:failure`;
+      await redisClient.incr(statusKey);
+      await redisClient.expire(statusKey, 60 * 60 * 24 * this.RETENTION_DAYS);
+
+      // Track processing time
+      const timeKey = `${this.METRICS_PREFIX}persona:webhook:processing_time`;
+      const timestamp = Date.now();
+      await redisClient.zAdd(timeKey, {
+        score: timestamp,
+        value: JSON.stringify({ processingTime, timestamp, eventType, success }),
+      });
+      await redisClient.expire(timeKey, 60 * 60 * 24 * this.RETENTION_DAYS);
+
+      logger.debug('Persona webhook tracked', { eventType, success, processingTime });
+    } catch (error) {
+      logger.error('Failed to track Persona webhook', { error, eventType });
+    }
+  }
+
+  /**
+   * Get Persona-specific metrics
+   */
+  async getPersonaMetrics() {
+    try {
+      const [created, completed, failed, expired, webhookSuccess, webhookFailure] = await Promise.all([
+        redisClient.get(`${this.METRICS_PREFIX}persona:verification:created`),
+        redisClient.get(`${this.METRICS_PREFIX}persona:verification:completed`),
+        redisClient.get(`${this.METRICS_PREFIX}persona:verification:failed`),
+        redisClient.get(`${this.METRICS_PREFIX}persona:verification:expired`),
+        redisClient.get(`${this.METRICS_PREFIX}persona:webhook:success`),
+        redisClient.get(`${this.METRICS_PREFIX}persona:webhook:failure`),
+      ]);
+
+      const totalCreated = parseInt(created || '0');
+      const totalCompleted = parseInt(completed || '0');
+      const totalFailed = parseInt(failed || '0');
+      const totalExpired = parseInt(expired || '0');
+      const totalWebhookSuccess = parseInt(webhookSuccess || '0');
+      const totalWebhookFailure = parseInt(webhookFailure || '0');
+
+      const completionRate = totalCreated > 0 ? (totalCompleted / totalCreated) * 100 : 0;
+      const failureRate = totalCreated > 0 ? (totalFailed / totalCreated) * 100 : 0;
+      const totalWebhooks = totalWebhookSuccess + totalWebhookFailure;
+      const webhookSuccessRate = totalWebhooks > 0 ? (totalWebhookSuccess / totalWebhooks) * 100 : 100;
+
+      // Calculate average webhook processing time
+      const timeKey = `${this.METRICS_PREFIX}persona:webhook:processing_time`;
+      const times = await redisClient.zRange(timeKey, 0, -1);
+      let avgProcessingTime = 0;
+
+      if (times.length > 0) {
+        const durations = times.map((t: string) => JSON.parse(t).processingTime);
+        avgProcessingTime =
+          durations.reduce((sum: number, d: number) => sum + d, 0) / durations.length;
+      }
+
+      return {
+        verifications: {
+          created: totalCreated,
+          completed: totalCompleted,
+          failed: totalFailed,
+          expired: totalExpired,
+          completionRate: Math.round(completionRate * 100) / 100,
+          failureRate: Math.round(failureRate * 100) / 100,
+        },
+        webhooks: {
+          totalDelivered: totalWebhooks,
+          successful: totalWebhookSuccess,
+          failed: totalWebhookFailure,
+          successRate: Math.round(webhookSuccessRate * 100) / 100,
+          avgProcessingTime: Math.round(avgProcessingTime),
+        },
+      };
+    } catch (error) {
+      logger.error('Failed to get Persona metrics', { error });
+      return {
+        verifications: {
+          created: 0,
+          completed: 0,
+          failed: 0,
+          expired: 0,
+          completionRate: 0,
+          failureRate: 0,
+        },
+        webhooks: {
+          totalDelivered: 0,
+          successful: 0,
+          failed: 0,
+          successRate: 100,
+          avgProcessingTime: 0,
+        },
+      };
     }
   }
 
@@ -286,7 +412,7 @@ class MetricsService {
    */
   async getExternalServiceMetrics(): Promise<ExternalServiceMetrics> {
     try {
-      const services = ['plaid', 'stripe', 'sila', 'midnight'] as const;
+      const services = ['plaid', 'stripe', 'sila', 'midnight', 'persona'] as const;
       const metrics: any = {};
 
       for (const service of services) {
@@ -325,6 +451,7 @@ class MetricsService {
         stripe: { uptime: 0, avgResponseTime: 0 },
         sila: { uptime: 0, avgResponseTime: 0 },
         midnight: { uptime: 0, avgResponseTime: 0 },
+        persona: { uptime: 0, avgResponseTime: 0 },
       };
     }
   }
@@ -333,16 +460,18 @@ class MetricsService {
    * Get all metrics
    */
   async getAllMetrics() {
-    const [proofMetrics, apiMetrics, serviceMetrics] = await Promise.all([
+    const [proofMetrics, apiMetrics, serviceMetrics, personaMetrics] = await Promise.all([
       this.getProofMetrics(),
       this.getAPIMetrics(),
       this.getExternalServiceMetrics(),
+      this.getPersonaMetrics(),
     ]);
 
     return {
       proof: proofMetrics,
       api: apiMetrics,
       externalServices: serviceMetrics,
+      persona: personaMetrics,
       timestamp: new Date().toISOString(),
     };
   }

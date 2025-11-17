@@ -3,10 +3,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { DashboardLayout } from '@/components/DashboardLayout';
-import { StripeIdentity } from '@/components/StripeIdentity';
+import { PersonaIdentity } from '@/components/PersonaIdentity';
 import { VerificationStatus as VerificationStatusComponent } from '@/components/VerificationStatus';
-import { stripeService } from '@/services/stripe.service';
-import { VerificationStatus } from '@/types/stripe.types';
+import { identityService } from '@/services/identity.service';
+import { VerificationStatus } from '@/types/identity.types';
 
 export default function VerificationPage() {
   const [verificationStatus, setVerificationStatus] =
@@ -21,7 +21,7 @@ export default function VerificationPage() {
   // Fetch verification status
   const fetchVerificationStatus = useCallback(async () => {
     try {
-      const status = await stripeService.getVerificationStatus();
+      const status = await identityService.getVerificationStatus();
       setVerificationStatus(status);
       setIsLoading(false);
 
@@ -101,8 +101,8 @@ export default function VerificationPage() {
         <div>
           <h1 style={styles.title}>Identity Verification</h1>
           <p style={styles.subtitle}>
-            Complete KYC verification through Stripe Identity to prove your
-            identity without sharing documents directly with verifiers.
+            Complete KYC verification to prove your identity without sharing
+            documents directly with verifiers.
           </p>
 
           {/* Notification Banner */}
@@ -137,7 +137,7 @@ export default function VerificationPage() {
                 your device's camera.
               </p>
 
-              <StripeIdentity
+              <PersonaIdentity
                 onVerificationComplete={handleVerificationComplete}
                 onError={handleVerificationError}
               />
@@ -179,7 +179,7 @@ export default function VerificationPage() {
               </li>
               <li style={styles.infoItem}>
                 <strong>Privacy:</strong> Your verification data is processed
-                securely by Stripe and never shared with third parties
+                securely and never shared with third parties
               </li>
             </ul>
           </div>

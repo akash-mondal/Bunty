@@ -45,6 +45,21 @@ class AlertingService {
       threshold: 5, // 5 consecutive failures
       cooldownMinutes: 10,
     },
+    personaVerificationFailure: {
+      enabled: true,
+      threshold: 20, // 20% failure rate
+      cooldownMinutes: 15,
+    },
+    personaWebhookFailure: {
+      enabled: true,
+      threshold: 10, // 10% webhook failure rate
+      cooldownMinutes: 10,
+    },
+    personaLowCompletionRate: {
+      enabled: true,
+      threshold: 70, // Below 70% completion rate
+      cooldownMinutes: 20,
+    },
   };
 
   /**
@@ -91,6 +106,7 @@ class AlertingService {
         this.checkDatabaseHealth(),
         this.checkErrorRate(),
         this.checkExternalServices(),
+        this.checkPersonaHealth(),
       ]);
     } catch (error) {
       logger.error('Error running health checks', { error });
@@ -207,6 +223,84 @@ class AlertingService {
       }
     } catch (error) {
       logger.error('Error checking external services', { error });
+    }
+  }
+
+  /**
+   * Check Persona integration health
+   */
+  private async checkPersonaHealth() {
+    try {
+      const metrics = await metricsService.getPersonaMetrics();
+      
+      // Check verification failure rate
+      if (
+        metrics.verifications.failureRate > this.alertConfigs.personaVerificationFailure.threshold &&
+        metrics.verifications.created >= 10 // Only alert if we have enough data
+      ) {
+        this.triggerAlert(
+          'personaVerificationFailure',
+          'High Persona Verification Failure Rate',
+          `Persona verification failure rate is ${metrics.verifications.failureRate.toFixed(2)}% (${metrics.verifications.failed} failures out of ${metrics.verifications.created} attempts)`,
+          {
+            failureRate: metrics.verifications.failureRate,
+            totalFailed: metrics.verifications.failed,
+            totalCreated: metrics.verifications.created,
+          }
+        );
+      }
+
+      // Check verification completion rate
+      if (
+        metrics.verifications.completionRate < this.alertConfigs.personaLowCompletionRate.threshold &&
+        metrics.verifications.created >= 10 // Only alert if we have enough data
+      ) {
+        this.triggerAlert(
+          'personaLowCompletionRate',
+          'Low Persona Verification Completion Rate',
+          `Persona verification completion rate is ${metrics.verifications.completionRate.toFixed(2)}% (${metrics.verifications.completed} completed out of ${metrics.verifications.created} attempts)`,
+          {
+            completionRate: metrics.verifications.completionRate,
+            totalCompleted: metrics.verifications.completed,
+            totalCreated: metrics.verifications.created,
+          }
+        );
+      }
+
+      // Check webhook delivery success rate
+      if (
+        metrics.webhooks.successRate < (100 - this.alertConfigs.personaWebhookFailure.threshold) &&
+        metrics.webhooks.totalDelivered >= 5 // Only alert if we have enough data
+      ) {
+        this.triggerAlert(
+          'personaWebhookFailure',
+          'High Persona Webhook Failure Rate',
+          `Persona webhook failure rate is ${(100 - metrics.webhooks.successRate).toFixed(2)}% (${metrics.webhooks.failed} failures out of ${metrics.webhooks.totalDelivered} webhooks)`,
+          {
+            successRate: metrics.webhooks.successRate,
+            totalFailed: metrics.webhooks.failed,
+            totalDelivered: metrics.webhooks.totalDelivered,
+            avgProcessingTime: metrics.webhooks.avgProcessingTime,
+          }
+        );
+      }
+
+      // Check Persona API uptime from external service metrics
+      const serviceMetrics = await metricsService.getExternalServiceMetrics();
+      if (serviceMetrics.persona.uptime < 95) {
+        this.triggerAlert(
+          'externalService_persona',
+          'Persona API Degraded',
+          `Persona API uptime is ${serviceMetrics.persona.uptime.toFixed(2)}%`,
+          {
+            service: 'persona',
+            uptime: serviceMetrics.persona.uptime,
+            avgResponseTime: serviceMetrics.persona.avgResponseTime,
+          }
+        );
+      }
+    } catch (error) {
+      logger.error('Error checking Persona health', { error });
     }
   }
 

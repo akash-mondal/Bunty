@@ -1,11 +1,18 @@
+import dotenv from 'dotenv';
+import path from 'path';
+
+// Load environment variables FIRST before any other imports
+dotenv.config({ path: path.join(__dirname, '../.env') });
+
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import { connectRedis } from './config/redis';
 import pool from './config/database';
+import { features, logFeatureFlags } from './config/features';
 import authRoutes from './routes/auth.routes';
 import plaidRoutes from './routes/plaid.routes';
 import stripeRoutes from './routes/stripe.routes';
+import identityRoutes from './routes/identity.routes';
 import silaRoutes from './routes/sila.routes';
 import witnessRoutes from './routes/witness.routes';
 import proofRoutes from './routes/proof.routes';
@@ -22,9 +29,6 @@ import { requestLogger, errorLogger } from './middleware/logging.middleware';
 import { metricsMiddleware } from './middleware/metrics.middleware';
 import logger from './utils/logger';
 import fs from 'fs';
-import path from 'path';
-
-dotenv.config({ path: '../.env' });
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -50,7 +54,10 @@ app.use(createRateLimiter({
   maxRequests: 100
 }));
 
-// Note: Stripe webhook route needs raw body, so it's registered before express.json()
+// Note: Identity webhook route needs raw body, so it's registered before express.json()
+app.use('/api/identity/webhook', express.raw({ type: 'application/json' }));
+
+// Note: Stripe webhook route kept temporarily for rollback capability
 app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
 
 // Body parsing with size limit
@@ -72,7 +79,8 @@ app.get('/health', (_req, res) => {
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/plaid', plaidRoutes);
-app.use('/api/stripe', stripeRoutes);
+app.use('/api/identity', identityRoutes);
+app.use('/api/stripe', stripeRoutes); // Kept temporarily for rollback capability
 app.use('/api/sila', silaRoutes);
 app.use('/api/witness', witnessRoutes);
 app.use('/api/proof', proofRoutes);
@@ -101,29 +109,44 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 // Initialize connections and start server
 const startServer = async () => {
   try {
+    console.log('Starting server...');
+    
     // Test database connection
-    await pool.query('SELECT NOW()');
-    logger.info('Database connected successfully');
+    console.log('Testing database connection...');
+    const dbResult = await Promise.race([
+      pool.query('SELECT NOW()'),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('DB query timeout')), 5000))
+    ]);
+    console.log('✓ Database connected successfully:', dbResult);
 
     // Connect to Redis
+    console.log('Connecting to Redis...');
     await connectRedis();
-    logger.info('Redis connected successfully');
+    console.log('✓ Redis connected successfully');
 
-    // Initialize audit logs table
-    await initAuditTable();
-    logger.info('Audit logs initialized');
+    // Initialize audit logs table (with timeout)
+    console.log('Initializing audit logs table...');
+    await Promise.race([
+      initAuditTable(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Audit table init timeout')), 5000))
+    ]).catch(err => console.warn('⚠ Audit table init skipped:', err.message));
+    console.log('✓ Audit logs initialized');
 
-    // Initialize API keys table
-    await initAPIKeysTable();
-    logger.info('API keys table initialized');
+    // Initialize API keys table (with timeout)
+    console.log('Initializing API keys table...');
+    await Promise.race([
+      initAPIKeysTable(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('API keys table init timeout')), 5000))
+    ]).catch(err => console.warn('⚠ API keys table init skipped:', err.message));
+    console.log('✓ API keys table initialized');
 
     // Start proof status polling service
     proofStatusPoller.start();
-    logger.info('Proof status poller started');
+    console.log('✓ Proof status poller started');
 
     // Start alerting service
     alertingService.start();
-    logger.info('Alerting service started');
+    console.log('✓ Alerting service started');
 
     app.listen(PORT, () => {
       logger.info(`Backend server running on port ${PORT}`);
@@ -138,6 +161,13 @@ const startServer = async () => {
           'Metrics collection',
           'Alerting',
         ],
+      });
+      
+      // Log feature flags configuration
+      logFeatureFlags();
+      logger.info('Identity verification provider:', {
+        provider: features.usePersona ? 'Persona' : 'Stripe Identity',
+        rollbackAvailable: true,
       });
     });
   } catch (error) {

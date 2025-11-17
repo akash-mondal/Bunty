@@ -90,7 +90,7 @@ export const auditAuthEvent = (
 
 // Audit trail logger for external service calls
 export const auditExternalService = (
-  service: 'plaid' | 'stripe' | 'sila' | 'midnight',
+  service: 'plaid' | 'stripe' | 'sila' | 'midnight' | 'persona',
   action: string,
   userId: string,
   success: boolean,

@@ -103,6 +103,22 @@ export class MetricsController {
   }
 
   /**
+   * Get Persona-specific metrics
+   * GET /api/metrics/persona
+   */
+  async getPersonaMetrics(_req: Request, res: Response): Promise<void> {
+    try {
+      const metrics = await metricsService.getPersonaMetrics();
+      res.json(metrics);
+    } catch (error) {
+      logger.error('Failed to get Persona metrics', { error });
+      res.status(500).json({
+        error: 'Failed to retrieve Persona metrics',
+      });
+    }
+  }
+
+  /**
    * Test alert (admin only)
    * POST /api/metrics/alerts/test
    */

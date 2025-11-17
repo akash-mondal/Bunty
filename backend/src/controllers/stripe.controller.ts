@@ -1,9 +1,21 @@
+/**
+ * @deprecated This controller is deprecated and will be removed in a future release.
+ * Stripe Identity has been replaced with Persona for identity verification.
+ * Use IdentityController instead.
+ * 
+ * This file is kept temporarily for rollback capability only.
+ * Removal planned after 2-week stabilization period.
+ */
+
 import { Request, Response } from 'express';
 import { stripeService } from '../services/stripe.service';
 import { CreateIdentitySessionRequest } from '../types/stripe.types';
 import { auditExternalService } from '../middleware/logging.middleware';
 import logger from '../utils/logger';
 
+/**
+ * @deprecated Use IdentityController instead
+ */
 export class StripeController {
   /**
    * POST /api/stripe/identity-session

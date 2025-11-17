@@ -15,6 +15,7 @@ router.get('/', metricsController.getAllMetrics.bind(metricsController));
 router.get('/proofs', metricsController.getProofMetrics.bind(metricsController));
 router.get('/api', metricsController.getAPIMetrics.bind(metricsController));
 router.get('/services', metricsController.getServiceMetrics.bind(metricsController));
+router.get('/persona', metricsController.getPersonaMetrics.bind(metricsController));
 
 // Reset metrics (admin only - could add admin middleware here)
 router.post('/reset', metricsController.resetMetrics.bind(metricsController));
